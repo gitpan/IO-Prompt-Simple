@@ -20,6 +20,7 @@ t/03_regexp.t
 t/04_encode.t
 t/05_isa_tty.t
 t/06_anyone_hash.t
+t/07_yn.t
 t/99_exception.t
 t/Util.pm
 xt/01_podspell.t
