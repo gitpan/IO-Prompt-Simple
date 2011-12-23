@@ -23,6 +23,8 @@ t/06_anyone_hash.t
 t/07_yn.t
 t/08_hash_multi_value.t
 t/09_ref_array.t
+t/10_color.t
+t/11_multi.t
 t/99_exception.t
 t/Util.pm
 xt/01_podspell.t

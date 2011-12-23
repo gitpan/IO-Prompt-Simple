@@ -5,8 +5,13 @@ use warnings;
 use 5.006001;
 use base 'Exporter';
 use Scalar::Util qw(blessed);
+use Term::ANSIColor qw(colored);
 
-our $VERSION = '0.03';
+BEGIN {
+    $ENV{ANSI_COLORS_DISABLED} = 1 if $^O eq 'MSWin32';
+}
+
+our $VERSION = '0.04';
 
 our @EXPORT = 'prompt';
 
@@ -21,11 +26,17 @@ sub prompt {
     else {
         ($default, $opts) = ($opts, {});
     }
-    my $display_default = defined $default ? "[$default]: " : ': ';
+    my $display_default = defined $default ? "[$default]" : '';
     $default = defined $default ? $default : '';
 
     my $stash = { message => $message };
     _parse_option($opts, $stash);
+
+    $stash->{message} .= " $display_default";
+    if (my $color = $opts->{color}) {
+        $color = [$color] unless ref $color eq 'ARRAY';
+        $stash->{message} = colored $color, $stash->{message};
+    }
 
     my ($in, $out) = @$stash{qw/in out/};
 
@@ -38,8 +49,10 @@ sub prompt {
     my $ignore_case = $opts->{ignore_case} ? 1 : 0;
     my $isa_tty     = _isa_tty($in, $out);
     my $answer;
+    my @answers; # for multi
     while (1) {
-        print {$out} $stash->{message}, ' ', $display_default;
+        print {$out} $stash->{choices}, "\n" if defined $stash->{choices};
+        print {$out} $stash->{message}, ': ';
         if ($ENV{PERL_IOPS_USE_DEFAULT} || $opts->{use_default} || (!$isa_tty && eof $in)) {
             print {$out} "$default\n";
             $answer = $default;
@@ -57,11 +70,27 @@ sub prompt {
         $answer = $default if !defined $answer || $answer eq '';
         $answer = $stash->{encoder}->decode($answer) if defined $stash->{encoder};
         if (my $exclusive_map = $stash->{exclusive_map}) {
-            if (exists $exclusive_map->{$ignore_case ? lc $answer : $answer}) {
-                $answer = $exclusive_map->{$ignore_case ? lc $answer : $answer};
-                last;
+            if ($stash->{want_multi}) {
+                $answer = $ignore_case ? lc $answer : $answer;
+                my $has_error;
+                for my $ans (split /\s+/, $answer) {
+                    unless (exists $exclusive_map->{$ans}) {
+                        $has_error = 1;
+                        last;
+                    }
+                    push @answers, $exclusive_map->{$ans};
+                }
+                $has_error = 1 unless @answers;
+                last unless $has_error;
             }
-            $answer = undef;
+            else {
+                if (exists $exclusive_map->{$ignore_case ? lc $answer : $answer}) {
+                    $answer = $exclusive_map->{$ignore_case ? lc $answer : $answer};
+                    last;
+                }
+            }
+            @answers = ();
+            $answer  = undef;
             print {$out} $stash->{hint};
             next;
         }
@@ -74,7 +103,7 @@ sub prompt {
         last;
     }
 
-    return $answer;
+    return $stash->{want_multi} ? @answers : $answer;
 }
 
 sub _parse_option {
@@ -88,8 +117,10 @@ sub _parse_option {
         $opts->{ignore_case}  = 1 unless exists $opts->{ignore_case};
     }
 
+    $opts->{anyone} ||= $opts->{choices};
     if ($opts->{anyone}) {
         $stash->{exclusive_map} = _make_exclusive_map($opts, $stash);
+        $stash->{want_multi}    = $opts->{multi} ? 1 : 0;
     }
     elsif ($opts->{regexp}) {
         $stash->{regexp} = _make_regexp($opts, $stash);
@@ -107,7 +138,7 @@ sub _make_exclusive_map {
     my $exclusive_map = {};
 
     my $ignore_case = $opts->{ignore_case} ? 1 : 0;
-    my ($message, $hint) = @$stash{qw/message hint/};
+    my ($message, $hint, $choices) = @$stash{qw/message hint choices/};
     my $type = _anyone_type($anyone) || return;
     if ($type eq 'ARRAY') {
         my @stuffs = _uniq(@$anyone);
@@ -133,18 +164,18 @@ sub _make_exclusive_map {
         $hint = sprintf "# Please answer %s\n", join ' or ',map qq{`$_`}, @keys;
         if ($opts->{verbose}) {
             my $idx = -1;
-            $message = sprintf '%s%s', join('', map {
+            $choices = join "\n", map {
                 $idx += 2;
-                sprintf "# %-*s => %s\n", $max, $_,
+                sprintf "# %-*s => %s", $max, $_,
                     $type eq 'REFARRAY' ? $$anyone->[$idx] : $anyone->{$_};
-            } @keys), $message;
+            } @keys;
         }
         else {
             $message .= sprintf ' (%s)', join '/', @keys;
         }
     }
 
-    @$stash{qw/message hint/} = ($message, $hint);
+    @$stash{qw/message hint choices/} = ($message, $hint, $choices);
     return $exclusive_map;
 }
 
@@ -313,6 +344,54 @@ Or, you can use REF-ARRAYREF.
 
   $answer = prompt 'foo', { anyone => \[b => 1, c => 2, a => 4] };
 
+=item choices
+
+Alias of C<< anyone >>
+
+=item multi: BOOL
+
+Returned multiple answers. Your answer are evaluated separated by space.
+
+  use Data::Dumper;
+  @answers = prompt 'choices', {
+      choices => [qw/a b c/],
+      multi   => 1,
+  };
+  print Dumper \@answers;
+
+Display like are:
+
+  choices (a/b/c) : c a[Enter]
+  $VAR1 = [
+            'c',
+            'a'
+          ];
+
+Or, you can specify HASHREF:
+
+  use Data::Dumper;
+  @answers = prompt 'choices', {
+      choices => {
+          google => 'http://google.com/',
+          yahoo  => 'http://yahoo.com/',
+          bing   => 'http://bing.com/',
+      },
+      verbose => 1,
+      multi   => 1,
+  };
+  print Dumper \@answers;
+
+Display like are:
+
+  # bing   => http://bing.com/
+  # google => http://google.com/
+  # yahoo  => http://yahoo.com/
+  choices: google yahoo[Enter]
+  $VAR1 = [
+            'http://google.com/',
+            'http://yahoo.com/'
+          ];
+
 =item regexp: STR | REGEXP
 
 Sets regexp for answer.
@@ -379,6 +458,12 @@ Sets output file handle (default: STDOUT)
 =item encode: STR | Encoder
 
 Sets encoding. If specified, returned a decoded string.
+
+=item color: STR | ARRAYREF
+
+Sets prompt color. Using L<< Term::ANSIColor >>.
+
+  $answer = prompt 'colored prompting', { color => [qw/red on_white/] };
 
 =back
 
