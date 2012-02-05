@@ -29,4 +29,4 @@ resources:
   bugtracker: http://github.com/xaicron/p5-IO-Prompt-Simple/issues
   license: http://dev.perl.org/licenses/
   repository: http://github.com/xaicron/p5-IO-Prompt-Simple/
-version: 0.04
+version: 0.05
