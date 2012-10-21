@@ -9,7 +9,7 @@ BEGIN {
     $ENV{ANSI_COLORS_DISABLED} = 1 if $^O eq 'MSWin32';
 }
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 our @EXPORT = 'prompt';
 
@@ -485,7 +485,7 @@ xaicron E<lt>xaicron {at} cpan.orgE<gt>
 
 =head1 COPYRIGHT
 
-Copyright 2012 - xaicron
+Copyright 2011 - 2012 xaicron.
 
 =head1 LICENSE
 
